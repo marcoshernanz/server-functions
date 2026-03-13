@@ -9,27 +9,38 @@ async function createEslint() {
   });
 }
 
+function getSingleResult(results: ESLint.LintResult[]): ESLint.LintResult {
+  const [result] = results;
+
+  assert.ok(result, "Expected exactly one lint result");
+
+  return result;
+}
+
 const eslint = await createEslint();
 
-const [badExportResult] = await eslint.lintText(
-  `
+const badExportResult = getSingleResult(
+  await eslint.lintText(
+    `
     "use server";
 
     export async function updateProfile(input: { name: string }) {
       return input.name;
     }
   `,
-  { filePath: "bad-export.ts" },
+    { filePath: "bad-export.ts" },
+  ),
 );
 
-assert.equal(badExportResult?.errorCount, 1);
+assert.equal(badExportResult.errorCount, 1);
 assert.equal(
-  badExportResult?.messages[0]?.ruleId,
+  badExportResult.messages[0]?.ruleId,
   "server-functions/prefer-server-function",
 );
 
-const [badForwardingResult] = await eslint.lintText(
-  `
+const badForwardingResult = getSingleResult(
+  await eslint.lintText(
+    `
     "use server";
 
     import { serverFunction } from "./src/index.js";
@@ -48,7 +59,8 @@ const [badForwardingResult] = await eslint.lintText(
       },
     });
   `,
-  { filePath: "bad-forwarding.ts" },
+    { filePath: "bad-forwarding.ts" },
+  ),
 );
 
 assert.equal(badForwardingResult.errorCount, 1);
@@ -57,8 +69,9 @@ assert.equal(
   "server-functions/no-whole-input-forwarding",
 );
 
-const [goodResult] = await eslint.lintText(
-  `
+const goodResult = getSingleResult(
+  await eslint.lintText(
+    `
     "use server";
 
     import { serverFunction } from "./src/index.js";
@@ -77,7 +90,8 @@ const [goodResult] = await eslint.lintText(
       },
     });
   `,
-  { filePath: "good.ts" },
+    { filePath: "good.ts" },
+  ),
 );
 
 assert.equal(goodResult.errorCount, 0);
