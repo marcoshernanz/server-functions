@@ -1,6 +1,6 @@
 # Examples
 
-Start with [serverFunctions.ts](/Users/marcoshernanz/dev/server-actions/examples/serverFunctions.ts). It shows the public API the way an app would actually use it.
+Start with [serverFunctions.ts](/Users/marcoshernanz/dev/server-actions/examples/serverFunctions.ts). It shows the public API with both Zod and Valibot schemas.
 
 Then open [policies.ts](/Users/marcoshernanz/dev/server-actions/examples/policies.ts) to see the reusable policies that feed `context`.
 
