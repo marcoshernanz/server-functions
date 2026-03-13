@@ -4,4 +4,4 @@ Start with [serverFunctions.ts](/Users/marcoshernanz/dev/server-actions/examples
 
 Then open [policies.ts](/Users/marcoshernanz/dev/server-actions/examples/policies.ts) to see the reusable policies that feed `context`.
 
-If you want the fake app dependencies behind those examples, open [inventedApp.ts](/Users/marcoshernanz/dev/server-actions/examples/inventedApp.ts).
+If you want the tiny fake app behind those examples, open [app.ts](/Users/marcoshernanz/dev/server-actions/examples/app.ts).

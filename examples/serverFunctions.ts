@@ -3,16 +3,13 @@
 import { z } from "zod";
 
 import { serverFunction } from "../src/index.js";
-import { db, supportInbox } from "./inventedApp.js";
-import {
-  loadOrganization,
-  rateLimitByIp,
-  requireOrganizationOwner,
-  requireUser,
-} from "./policies.js";
+import { db, supportInbox } from "./app.js";
+import { rateLimitByIp, requireUser } from "./policies.js";
 
 export const updateProfile = serverFunction({
-  input: z.object({ bio: z.string().min(10).max(160) }),
+  input: z.object({
+    bio: z.string().min(10).max(160),
+  }),
   policies: [requireUser, rateLimitByIp],
   handler: async (context, input) => {
     await db.user.update({
@@ -20,12 +17,29 @@ export const updateProfile = serverFunction({
       data: { bio: input.bio },
     });
 
-    return { ok: true as const };
+    return { ok: true };
+  },
+});
+
+export const sendWelcomeEmail = serverFunction({
+  input: z.object({
+    email: z.email(),
+  }),
+  policies: [requireUser],
+  handler: async (_context, input) => {
+    await supportInbox.sendWelcomeEmail({
+      email: input.email,
+    });
+
+    return { ok: true };
   },
 });
 
 export const submitSupportTicket = serverFunction({
-  input: z.object({ email: z.email(), message: z.string().min(20) }),
+  input: z.object({
+    email: z.email(),
+    message: z.string().min(20),
+  }),
   policies: [rateLimitByIp],
   handler: async (_context, input) => {
     await supportInbox.createTicket({
@@ -33,23 +47,6 @@ export const submitSupportTicket = serverFunction({
       message: input.message,
     });
 
-    return { ok: true as const };
-  },
-});
-
-export const createOrganizationInvite = serverFunction({
-  input: z.object({ email: z.email() }),
-  policies: [requireUser, loadOrganization("acme"), requireOrganizationOwner],
-  handler: async (context, input) => {
-    await db.organizationInvite.create({
-      organizationId: context.organization.id,
-      email: input.email,
-      invitedByUserId: context.user.id,
-    });
-
-    return {
-      ok: true as const,
-      organizationSlug: context.organization.slug,
-    };
+    return { ok: true };
   },
 });

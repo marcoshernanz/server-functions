@@ -1,6 +1,5 @@
 import { definePolicy } from "../src/index.js";
-import type { Organization, User } from "./inventedApp.js";
-import { db, getSession, ratelimit } from "./inventedApp.js";
+import { getSession, ratelimit } from "./app.js";
 
 export const requireUser = definePolicy(async () => {
   const session = await getSession();
@@ -22,24 +21,3 @@ export const rateLimitByIp = definePolicy(async ({ ip, headers }) => {
 
   return {};
 });
-
-export const loadOrganization = (slug: string) =>
-  definePolicy(async () => {
-    const organization = await db.organization.findBySlug(slug);
-
-    if (!organization) {
-      throw new Error("Organization not found");
-    }
-
-    return { organization };
-  });
-
-export const requireOrganizationOwner = definePolicy(
-  async (context: { organization: Organization; user: User }) => {
-    if (context.organization.ownerUserId !== context.user.id) {
-      throw new Error("Forbidden");
-    }
-
-    return {};
-  },
-);
