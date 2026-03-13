@@ -374,7 +374,7 @@ This repo should likely start small:
 
 That is enough to demonstrate the idea without pretending to solve the entire Next.js API design space.
 
-See [serverFunction.example.ts](/Users/marcoshernanz/dev/server-actions/serverFunction.example.ts) for a developer-facing sketch of the proposed API.
+See [examples/README.md](/Users/marcoshernanz/dev/server-actions/examples/README.md) for a small, realistic example layout.
 
 ## Open Questions
 
