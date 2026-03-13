@@ -177,6 +177,59 @@ Reasoning:
 - Policies that do not expose data are naturally supported.
 - This scales better than positional outputs as more policies are added.
 
+## Context Key Collisions
+
+V1 will disallow context key collisions entirely.
+
+That means:
+
+- two policies cannot return the same top-level key
+- a policy cannot return a key that collides with framework-owned context fields
+
+Examples that should be rejected:
+
+```ts
+const requireUser = definePolicy(async () => {
+  return { user: session.user };
+});
+
+const impersonateUser = definePolicy(async () => {
+  return { user: targetUser };
+});
+
+serverFunction({
+  input: schema,
+  policies: [requireUser, impersonateUser],
+  handler: async (context, input) => {
+    context.user;
+  },
+});
+```
+
+```ts
+const badPolicy = definePolicy(async () => {
+  return { headers: "not allowed" };
+});
+```
+
+Reasoning:
+
+- silent overwrites are too dangerous in a safety-focused API
+- `context.user` should never change meaning based on policy order
+- disallowing collisions makes the type model much cleaner
+- it forces policy authors to choose explicit, stable names
+
+Expected enforcement:
+
+- compile-time error when collisions are visible in the type system
+- runtime error as a backstop
+
+How users should resolve collisions:
+
+- rename one key, for example `viewer` vs `impersonatedUser`
+- move derived data to another field, for example `permissions`
+- combine related data into one policy if it really represents one concept
+
 ## `input` Contract
 
 V1 will require:
