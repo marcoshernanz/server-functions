@@ -39,17 +39,59 @@ const loadOrganization = (slug: string) =>
     return { organization };
   });
 
+const requireOrganizationOwner = definePolicy<
+  { organization: Organization; user: User },
+  {}
+>(async (context) => {
+  if (context.organization.id !== "org_123" || context.user.id !== "user_123") {
+    throw new Error("Forbidden");
+  }
+
+  return {};
+});
+
 const rateLimitByIp = definePolicy(async () => {
   return {};
 });
 
-const transformedSchema = z.string().transform((value) => value.length);
-
 const updateProfile = serverFunction({
-  input: transformedSchema,
-  policies: [requireUser, loadOrganization("acme"), rateLimitByIp],
+  input: z.object({
+    bio: z.string().min(10).max(160),
+  }),
+  policies: [requireUser, rateLimitByIp],
   handler: async (context, input) => {
-    type InputIsParsedOutput = Expect<Equal<typeof input, number>>;
+    type InputMatchesSchema = Expect<
+      Equal<typeof input, { bio: string }>
+    >;
+    type UserIsAvailable = Expect<Equal<typeof context.user, User>>;
+
+    context.headers.get("x-request-id");
+    context.ip;
+    context.requestId;
+
+    return {
+      ok: true as const,
+      bio: input.bio,
+      userId: context.user.id,
+    };
+  },
+});
+
+const organizationInviteInput = z
+  .string()
+  .email()
+  .transform((email) => ({ email }));
+
+const createOrganizationInvite = serverFunction({
+  input: organizationInviteInput,
+  policies: [
+    requireUser,
+    loadOrganization("acme"),
+    requireOrganizationOwner,
+    rateLimitByIp,
+  ],
+  handler: async (context, input) => {
+    type InputIsParsedOutput = Expect<Equal<typeof input, { email: string }>>;
     type UserIsAvailable = Expect<Equal<typeof context.user, User>>;
     type OrganizationIsAvailable = Expect<
       Equal<typeof context.organization, Organization>
@@ -61,33 +103,42 @@ const updateProfile = serverFunction({
 
     return {
       ok: true as const,
-      length: input,
+      inviteeEmail: input.email,
       organizationSlug: context.organization.slug,
       userId: context.user.id,
     };
   },
 });
 
-type ClientInput = Parameters<typeof updateProfile>[0];
-type ClientInputUsesSchemaInput = Expect<Equal<ClientInput, string>>;
+type UpdateProfileInput = Parameters<typeof updateProfile>[0];
+type UpdateProfileInputInferenceWorks = Expect<
+  Equal<UpdateProfileInput, { bio: string }>
+>;
 
-type Result = Awaited<ReturnType<typeof updateProfile>>;
-type ResultInferenceWorks = Expect<
+type InviteClientInput = Parameters<typeof createOrganizationInvite>[0];
+type InviteClientInputUsesSchemaInput = Expect<Equal<InviteClientInput, string>>;
+
+type InviteResult = Awaited<ReturnType<typeof createOrganizationInvite>>;
+type InviteResultInferenceWorks = Expect<
   Equal<
-    Result,
+    InviteResult,
     {
       ok: true;
-      length: number;
+      inviteeEmail: string;
       organizationSlug: string;
       userId: string;
     }
   >
 >;
 
-updateProfile("abc");
+updateProfile({ bio: "This is a valid profile bio." });
+createOrganizationInvite("person@example.com");
 
 // @ts-expect-error Client input should come from the schema input type.
-updateProfile(123);
+updateProfile("abc");
+
+// @ts-expect-error Transformed schema input should still accept the schema input type.
+createOrganizationInvite({ email: "person@example.com" });
 
 const duplicateUser = definePolicy(async () => {
   return {
