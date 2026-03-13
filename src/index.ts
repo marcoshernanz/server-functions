@@ -5,6 +5,7 @@ type ContextFragment = Record<string, unknown>;
 type ReservedContextKey = keyof BaseContext;
 
 declare const policyBrand: unique symbol;
+const serverFunctionMeta = Symbol("serverFunctionMeta");
 
 export type HeaderBag = {
   get(name: string): string | null;
@@ -65,10 +66,6 @@ type MergePolicyOutputs<
   ? MergePolicyOutputs<TTail, TAccumulated & PolicyOutput<THead>>
   : TAccumulated;
 
-export type ServerFunction<TSchema extends StandardSchemaV1, TResult> = (
-  input: StandardSchemaV1.InferInput<TSchema>,
-) => Promise<TResult>;
-
 type ServerFunctionConfig<
   TSchema extends StandardSchemaV1,
   TPolicies extends readonly AnyPolicy[],
@@ -82,6 +79,35 @@ type ServerFunctionConfig<
   ) => MaybePromise<TResult>;
 };
 
+type ServerFunctionMetadata<
+  TSchema extends StandardSchemaV1,
+  TPolicies extends readonly AnyPolicy[],
+  TResult,
+> = ServerFunctionConfig<TSchema, TPolicies, TResult>;
+
+export type ServerFunction<TSchema extends StandardSchemaV1, TResult> = ((
+  input: StandardSchemaV1.InferInput<TSchema>,
+) => Promise<TResult>) & {
+  readonly [serverFunctionMeta]: ServerFunctionMetadata<
+    TSchema,
+    readonly AnyPolicy[],
+    TResult
+  >;
+};
+
+type AnyServerFunction = ((input: any) => Promise<any>) & {
+  readonly [serverFunctionMeta]: unknown;
+};
+
+type ServerFunctionMetadataOf<TServerFunction extends AnyServerFunction> =
+  TServerFunction[typeof serverFunctionMeta] extends ServerFunctionMetadata<
+    infer TSchema extends StandardSchemaV1,
+    infer TPolicies extends readonly AnyPolicy[],
+    infer TResult
+  >
+    ? ServerFunctionMetadata<TSchema, TPolicies, TResult>
+    : never;
+
 export function definePolicy<
   TRequiredContext extends object = {},
   TOutput extends ContextFragment = {},
@@ -89,6 +115,81 @@ export function definePolicy<
   handler: (context: BaseContext & TRequiredContext) => MaybePromise<TOutput>,
 ): Policy<TRequiredContext, TOutput> {
   return { handler } as Policy<TRequiredContext, TOutput>;
+}
+
+type ExecuteServerFunctionOptions<TServerFunction extends AnyServerFunction> = {
+  context: BaseContext;
+  input: Parameters<TServerFunction>[0];
+};
+
+function isContextFragment(value: unknown): value is ContextFragment {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function mergeContext(
+  context: BaseContext & ContextFragment,
+  fragment: ContextFragment,
+): BaseContext & ContextFragment {
+  for (const key of Object.keys(fragment)) {
+    if (key in context) {
+      throw new Error(`Context key collision at runtime: ${key}`);
+    }
+  }
+
+  return { ...context, ...fragment };
+}
+
+let requestCounter = 0;
+
+function createPrototypeBaseContext(): BaseContext {
+  requestCounter += 1;
+
+  return {
+    headers: {
+      get() {
+        return null;
+      },
+    },
+    ip: "127.0.0.1",
+    requestId: `req_${requestCounter}`,
+  };
+}
+
+async function runServerFunction<TServerFunction extends AnyServerFunction>(
+  serverFunction: TServerFunction,
+  options: ExecuteServerFunctionOptions<TServerFunction>,
+): Promise<Awaited<ReturnType<TServerFunction>>> {
+  const metadata = serverFunction[
+    serverFunctionMeta
+  ] as ServerFunctionMetadataOf<TServerFunction>;
+  const validationResult = await metadata.input["~standard"].validate(
+    options.input,
+  );
+
+  if ("issues" in validationResult && validationResult.issues) {
+    const error = new Error("Invalid input") as Error & {
+      issues?: ReadonlyArray<StandardSchemaV1.Issue>;
+    };
+    error.issues = validationResult.issues;
+    throw error;
+  }
+
+  let context = { ...options.context } as BaseContext & ContextFragment;
+
+  for (const policy of metadata.policies) {
+    const fragment = await (policy as AnyPolicy).handler(context);
+
+    if (!isContextFragment(fragment)) {
+      throw new Error("Policy output must be an object");
+    }
+
+    context = mergeContext(context, fragment);
+  }
+
+  return (await metadata.handler(
+    context as never,
+    validationResult.value as never,
+  )) as Awaited<ReturnType<TServerFunction>>;
 }
 
 export function serverFunction<
@@ -99,9 +200,18 @@ export function serverFunction<
   config: ServerFunctionConfig<TSchema, TPolicies, TResult> &
     AssertNoContextCollisions<TPolicies>,
 ): ServerFunction<TSchema, Awaited<TResult>> {
-  void config;
+  const fn = (async (input: StandardSchemaV1.InferInput<TSchema>) => {
+    return runServerFunction(fn as AnyServerFunction, {
+      context: createPrototypeBaseContext(),
+      input,
+    });
+  }) as unknown as ServerFunction<TSchema, Awaited<TResult>>;
 
-  return (async (_input: StandardSchemaV1.InferInput<TSchema>) => {
-    throw new Error("Runtime execution is not implemented in this prototype.");
-  }) as ServerFunction<TSchema, Awaited<TResult>>;
+  Object.defineProperty(fn, serverFunctionMeta, {
+    value: config,
+    enumerable: false,
+    writable: false,
+  });
+
+  return fn;
 }
