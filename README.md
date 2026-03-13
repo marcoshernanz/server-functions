@@ -12,6 +12,146 @@ The problem is not just security. It is also readability and tooling:
 
 The goal of this document is to compare the main approaches, identify the tradeoffs, and recommend an initial direction to prototype.
 
+## Motivation
+
+This problem is not hypothetical.
+
+- React says arguments to Server Functions are fully client-controlled and must be treated as untrusted input.
+- React also allows plain objects with serializable properties to be passed as Server Function arguments.
+- Next.js says exported Server Actions should be treated like public HTTP endpoints and that input should always be validated and authorization should always be enforced.
+
+See the official docs for [React Server Functions](https://react.dev/reference/rsc/use-server), [Next.js use server](https://nextjs.org/docs/app/api-reference/directives/use-server), and [Next.js data security guidance](https://nextjs.org/docs/app/guides/data-security).
+
+That means a Server Function that looks like an ordinary TypeScript function can quietly become a remote mutation endpoint with attacker-controlled inputs.
+
+### 1. Insecure direct object reference
+
+This looks innocent:
+
+```ts
+'use server';
+
+export async function updateProfile(
+  userId: string,
+  data: { name: string; surname: string }
+) {
+  await db.user.update({
+    where: { id: userId },
+    data,
+  });
+}
+```
+
+But this function trusts a client-supplied `userId`. If this function is reachable from the client, a malicious user can attempt to update someone else's record simply by sending a different ID:
+
+```ts
+await updateProfile("victim_user_id", {
+  name: "Mallory",
+  surname: "OwnsYourAccount",
+});
+```
+
+This is a classic insecure direct object reference. The client should not get to decide which user record is being mutated.
+
+The minimum fix is to derive identity on the server and reject unauthenticated callers:
+
+```ts
+'use server';
+
+export async function updateProfile(
+  data: { name: string; surname: string }
+) {
+  const session = await authenticate();
+
+  if (!session?.user) {
+    throw new Error("Unauthorized");
+  }
+
+  await db.user.update({
+    where: { id: session.user.id },
+    data,
+  });
+}
+```
+
+That closes one hole, but it still is not enough.
+
+### 2. Mass assignment / over-posting
+
+This version no longer trusts a client-provided `userId`:
+
+```ts
+'use server';
+
+export async function updateProfile(
+  data: { name: string; surname: string }
+) {
+  const session = await authenticate();
+
+  if (!session?.user) {
+    throw new Error("Unauthorized");
+  }
+
+  await db.user.update({
+    where: { id: session.user.id },
+    data,
+  });
+}
+```
+
+It still looks safe. It still is not.
+
+TypeScript types are erased at runtime. The caller is not forced to send exactly `{ name, surname }`, and React explicitly allows plain serializable objects as Server Function arguments. A malicious caller can try to send extra fields:
+
+```ts
+await updateProfile({
+  name: "Mallory",
+  surname: "Root",
+  role: "admin",
+  emailVerified: true,
+  billingPlan: "enterprise",
+} as any);
+```
+
+If the function forwards `data` directly into a generic write path, those extra fields can survive all the way into the database update. That is how a "harmless profile update" turns into privilege escalation or unauthorized account mutation.
+
+The minimum safe pattern is to parse and constrain the payload on the server before writing anything:
+
+```ts
+'use server';
+
+import { z } from "zod";
+
+const UpdateProfileInput = z
+  .object({
+    name: z.string().min(1).max(100),
+    surname: z.string().min(1).max(100),
+  })
+  .strict();
+
+export async function updateProfile(rawData: unknown) {
+  const session = await authenticate();
+
+  if (!session?.user) {
+    throw new Error("Unauthorized");
+  }
+
+  const data = UpdateProfileInput.parse(rawData);
+
+  await db.user.update({
+    where: { id: session.user.id },
+    data,
+  });
+}
+```
+
+This is the core motivation for the rest of this document:
+
+- a Server Function should not look like an ordinary function if it is actually a public mutation endpoint
+- authorization should not be easy to forget
+- input parsing should not be an optional afterthought
+- the safe path should be more obvious than the dangerous path
+
 ## Safety Goals
 
 Any proposal should try to improve at least some of the following:
