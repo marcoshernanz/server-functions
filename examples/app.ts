@@ -1,7 +1,7 @@
 export type User = {
   id: string;
   email: string;
-  bio: string;
+  name: string;
 };
 
 export type Session = {
@@ -13,7 +13,7 @@ export async function getSession(): Promise<Session | null> {
     user: {
       id: "user_123",
       email: "user@example.com",
-      bio: "I like safe server functions.",
+      name: "John Doe",
     },
   };
 }
@@ -28,7 +28,7 @@ export const db = {
   user: {
     async update(_args: {
       where: { id: string };
-      data: { bio: string };
+      data: { name: string };
     }): Promise<void> {},
   },
 };
@@ -38,7 +38,5 @@ export const supportInbox = {
     email: string;
     message: string;
   }): Promise<void> {},
-  async sendWelcomeEmail(_args: {
-    email: string;
-  }): Promise<void> {},
+  async sendWelcomeEmail(_args: { email: string }): Promise<void> {},
 };

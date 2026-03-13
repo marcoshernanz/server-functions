@@ -8,13 +8,14 @@ import { rateLimitByIp, requireUser } from "./policies.js";
 
 export const updateProfile = serverFunction({
   input: z.object({
-    bio: z.string().min(10).max(160),
+    name: z.string().min(1).max(40),
+    email: z.email(),
   }),
   policies: [requireUser, rateLimitByIp],
   handler: async (context, input) => {
     await db.user.update({
       where: { id: context.user.id },
-      data: { bio: input.bio },
+      data: input,
     });
 
     return { ok: true };
