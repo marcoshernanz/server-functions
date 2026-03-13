@@ -3,13 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "lint": "eslint src examples runtime-tests.ts type-tests.ts eslint-tests.ts",
+    "test:eslint": "tsx eslint-tests.ts",
     "typecheck": "tsc --noEmit",
     "test:runtime": "tsx runtime-tests.ts"
   },
   "devDependencies": {
     "@standard-schema/spec": "^1.0.0",
-    "typescript": "^5.9.2",
+    "@types/node": "^25.5.0",
+    "@typescript-eslint/parser": "^8.57.0",
+    "eslint": "^10.0.3",
     "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
     "valibot": "^1.2.0",
     "zod": "^4.1.5"
   }
