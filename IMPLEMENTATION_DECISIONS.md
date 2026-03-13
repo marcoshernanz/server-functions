@@ -17,14 +17,15 @@ V1 will implement:
 
 - `serverFunction(...)`
 - `definePolicy(...)`
-- `args: schema` as a required option
-- `use: [...]` as the policy composition mechanism
-- `handler: async (ctx, args) => {}` as the handler signature
-- strong type inference from `args` and `use`
+- `input: schema` as a required option
+- `policies: [...]` as the policy composition mechanism
+- `handler: async (context, input) => {}` as the handler signature
+- strong type inference from `input` and `policies`
 
 V1 will not implement yet:
 
 - `parse(raw)` or any custom parser escape hatch
+- no-input Server Functions
 - runtime execution details
 - framework transport integration
 - lint rules
@@ -54,34 +55,32 @@ Reasoning:
 - It makes fixed policies and parameterized policies easier to distinguish.
 - It is clearer than `policy(...)` when reading exported code.
 
-Examples:
+### Input naming
 
-```ts
-export const requireUser = definePolicy(async () => {
-  const session = await getSession();
+We will use `input`, not `args`.
 
-  if (!session?.user) {
-    throw new Error("Unauthorized");
-  }
+Reasoning:
 
-  return { user: session.user };
-});
+- there is always one validated payload object
+- this is not a positional-arguments API
+- `input` matches the real security model better than `args`
+- it reads more naturally in both the config object and the handler
 
-export const requireRole = (role: string) =>
-  definePolicy(async (ctx) => {
-    if (!ctx.user.roles.includes(role)) {
-      throw new Error("Forbidden");
-    }
+### Policies naming
 
-    return {};
-  });
-```
+We will use `policies`, not `use`.
 
-Usage:
+Reasoning:
 
-```ts
-use: [requireUser, requireRole("admin")]
-```
+- `use` is too generic
+- `policies` makes the intent obvious at the definition site
+- explicit names matter in an API whose goal is safety
+
+### Context naming
+
+In prose, we will call the first handler parameter `context`.
+
+In user code, developers can still name that local variable `ctx` if they want. That is not API surface.
 
 ## Public API Shape
 
@@ -89,12 +88,12 @@ The v1 public API is:
 
 ```ts
 export const updateProfile = serverFunction({
-  args: updateProfileSchema,
-  use: [requireUser, rateLimitByIp],
-  handler: async (ctx, args) => {
+  input: updateProfileSchema,
+  policies: [requireUser, rateLimitByIp],
+  handler: async (context, input) => {
     await db.user.update({
-      where: { id: ctx.user.id },
-      data: { bio: args.bio },
+      where: { id: context.user.id },
+      data: { bio: input.bio },
     });
 
     return { ok: true };
@@ -106,57 +105,57 @@ Core decisions:
 
 - `serverFunction(...)` takes one config object
 - `handler` is inline inside that object
-- `handler` receives `(ctx, args)`
-- `use` is an array
-- `ctx` is an object
-- `args` is required in v1
+- `handler` receives `(context, input)`
+- `policies` is an array
+- `context` is an object
+- `input` is required in v1
 
-## Why `handler(ctx, args)` Instead Of Other Shapes
+## Why `handler(context, input)` Instead Of Other Shapes
 
 We are choosing:
 
 ```ts
-handler: async (ctx, args) => {}
+handler: async (context, input) => {}
 ```
 
 We are not choosing:
 
 ```ts
-handler: async (args, ctx) => {}
-handler: async ([user, rateLimit], args) => {}
-handler: async ({ user, rateLimit }, args) => {}
+handler: async (input, context) => {}
+handler: async ([user, rateLimit], input) => {}
+handler: async ({ user, rateLimit }, input) => {}
 ```
 
 Reasoning:
 
-- This matches the strongest part of the Convex shape: context first, parsed args second.
-- `ctx` is conceptually execution context, not user input.
-- `args` should always be one validated object, not positional arguments.
+- This matches the strongest part of the Convex shape: execution context first, validated input second.
+- `context` is conceptually environment and capabilities, not user input.
+- `input` should always be one validated object, not positional arguments.
 - Tuple-based policy outputs are too brittle.
 - Object destructuring can still happen inside the handler when needed.
 
-## Why `use` Is An Array
+## Why `policies` Is An Array
 
 We are choosing:
 
 ```ts
-use: [requireUser, rateLimitByIp]
+policies: [requireUser, rateLimitByIp]
 ```
 
 We are not choosing:
 
 ```ts
-use: { user: requireUser, rateLimit: rateLimitByIp }
+policies: { user: requireUser, rateLimit: rateLimitByIp }
 ```
 
 Reasoning:
 
-- `use` represents ordered composition.
+- `policies` represents ordered composition.
 - Policies are pipeline steps, and arrays model pipelines better than objects.
 - Some policies exist only to enforce behavior and should not need a name in user code.
-- The handler should consume a merged `ctx`, not a positional or manually mapped policy output object.
+- The handler should consume a merged `context`, not a positional or manually mapped policy output object.
 
-## Why `ctx` Is An Object
+## Why `context` Is An Object
 
 Policies can contribute named fields to the handler context.
 
@@ -169,7 +168,7 @@ Examples:
 The final handler sees:
 
 ```ts
-ctx: BaseContext & { user: User } & { org: Org }
+context: BaseContext & { user: User } & { org: Org }
 ```
 
 Reasoning:
@@ -178,12 +177,12 @@ Reasoning:
 - Policies that do not expose data are naturally supported.
 - This scales better than positional outputs as more policies are added.
 
-## `args` Contract
+## `input` Contract
 
 V1 will require:
 
 ```ts
-args: schema
+input: schema
 ```
 
 Where `schema` must satisfy the Standard Schema contract.
@@ -199,13 +198,13 @@ V1 will not support:
 
 - `parse(raw)` fallback
 - `validate(raw)` callback
-- no-args server functions without an explicit schema placeholder
+- no-input Server Functions without an explicit schema placeholder
 
 Those can be added later if needed.
 
 ## Standard Schema Decision
 
-We will support Standard Schema as the only `args` contract in v1.
+We will support Standard Schema as the only `input` contract in v1.
 
 Reasoning:
 
@@ -218,14 +217,14 @@ This is a deliberate simplification for the prototype, not necessarily the final
 
 ## Type Inference Rules
 
-### `args` inference
+### `input` inference
 
-`handler` should infer its `args` parameter from `args: schema`.
+`handler` should infer its `input` parameter from `input: schema`.
 
 Conceptually:
 
 ```ts
-type InferArgs<TSchema> = StandardSchemaV1.InferOutput<TSchema>;
+type InferInput<TSchema> = StandardSchemaV1.InferOutput<TSchema>;
 ```
 
 So this:
@@ -236,10 +235,10 @@ const schema = z.object({
 });
 
 serverFunction({
-  args: schema,
-  use: [],
-  handler: async (_ctx, args) => {
-    args.bio;
+  input: schema,
+  policies: [],
+  handler: async (_context, input) => {
+    input.bio;
   },
 });
 ```
@@ -247,12 +246,12 @@ serverFunction({
 should infer:
 
 ```ts
-args: { bio: string }
+input: { bio: string }
 ```
 
-### `ctx` inference
+### `context` inference
 
-`handler` should infer its `ctx` parameter from the intersection of all policy outputs.
+`handler` should infer its `context` parameter from the intersection of all policy outputs.
 
 Conceptually:
 
@@ -268,11 +267,12 @@ So this:
 
 ```ts
 serverFunction({
-  args: schema,
-  use: [requireUser, requireOrg("acme")] as const,
-  handler: async (ctx, args) => {
-    ctx.user;
-    ctx.org;
+  input: schema,
+  policies: [requireUser, requireOrg("acme")] as const,
+  handler: async (context, input) => {
+    context.user;
+    context.org;
+    input.bio;
   },
 });
 ```
@@ -280,12 +280,12 @@ serverFunction({
 should infer:
 
 ```ts
-ctx: BaseContext & { user: User } & { org: Org }
+context: BaseContext & { user: User } & { org: Org }
 ```
 
-### `use` must preserve tuple inference
+### `policies` must preserve tuple inference
 
-We want `use` to preserve literal tuple inference.
+We want `policies` to preserve literal tuple inference.
 
 That means the generic should likely use:
 
@@ -296,7 +296,7 @@ const TPolicies extends readonly Policy<any>[]
 and examples should use:
 
 ```ts
-use: [requireUser, requireOrg("acme")] as const
+policies: [requireUser, requireOrg("acme")] as const
 ```
 
 if needed.
@@ -328,7 +328,7 @@ These are values, not factories.
 Usage:
 
 ```ts
-use: [requireUser]
+policies: [requireUser]
 ```
 
 ### Parameterized policies
@@ -337,8 +337,8 @@ Example:
 
 ```ts
 export const requireRole = (role: string) =>
-  definePolicy(async (ctx) => {
-    if (!ctx.user.roles.includes(role)) {
+  definePolicy(async (context) => {
+    if (!context.user.roles.includes(role)) {
       throw new Error("Forbidden");
     }
 
@@ -349,7 +349,7 @@ export const requireRole = (role: string) =>
 Usage:
 
 ```ts
-use: [requireUser, requireRole("admin")]
+policies: [requireUser, requireRole("admin")]
 ```
 
 ## Base Context Decision
@@ -380,15 +380,15 @@ Example:
 
 ```ts
 export const updateProfile = serverFunction({
-  args: updateProfileSchema,
-  use: [requireUser],
-  handler: async (ctx, args) => {
-    return { ok: true as const, userId: ctx.user.id };
+  input: updateProfileSchema,
+  policies: [requireUser],
+  handler: async (context, input) => {
+    return { ok: true as const, userId: context.user.id, bio: input.bio };
   },
 });
 ```
 
-The resulting server function type should preserve that resolved return type.
+The resulting Server Function type should preserve that resolved return type.
 
 ## Error Model
 
@@ -404,7 +404,7 @@ This is enough for the type prototype.
 
 ## Serialization
 
-We are not enforcing React/Next serialization constraints in v1 types.
+We are not enforcing React or Next serialization constraints in v1 types.
 
 Reasoning:
 
@@ -417,9 +417,9 @@ Reasoning:
 These are intentionally postponed:
 
 - `parse(raw)` escape hatch
-- support for no-args server functions
-- support for optional `use`
-- whether `args` should allow async parsing explicitly
+- support for no-input Server Functions
+- support for optional `policies`
+- whether `input` should allow async parsing explicitly
 - policy dependency ordering checks
 - collision behavior when two policies return the same key
 - helper types exported publicly vs kept internal
@@ -460,12 +460,12 @@ const updateProfileSchema = z.object({
 });
 
 export const updateProfile = serverFunction({
-  args: updateProfileSchema,
-  use: [requireUser, rateLimitByIp],
-  handler: async (ctx, args) => {
+  input: updateProfileSchema,
+  policies: [requireUser, rateLimitByIp],
+  handler: async (context, input) => {
     await db.user.update({
-      where: { id: ctx.user.id },
-      data: { bio: args.bio },
+      where: { id: context.user.id },
+      data: { bio: input.bio },
     });
 
     return { ok: true };
@@ -479,8 +479,8 @@ When implementation starts, the first pass should produce:
 
 1. the public `serverFunction` type signature
 2. the public `definePolicy` type signature
-3. Standard Schema-based `args` inference
-4. merged `ctx` inference from `use`
+3. Standard Schema-based `input` inference
+4. merged `context` inference from `policies`
 5. a type-test file proving the happy path
 
 That is enough for v1.

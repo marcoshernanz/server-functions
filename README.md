@@ -178,12 +178,12 @@ The options below are compared across these axes:
 
 | Option | Example shape | Explicitness | Safety guarantees | Tooling fit | AI fit | Migration cost | Framework cost | Pros | Cons |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Explicit Server Function API | `serverFunction({ args: schema, use: [requireUser()], handler: async (...) => {} })` | High | High | High | High | Medium | Medium to High | Best readability at the function definition, metadata stays local, easy to lint and teach | Requires new API surface, still needs an underlying composition model |
-| First-party factory with middleware | `createServerFunctionFactory().use(requireUser()).args(schema).define(async (...) => {})` | Medium | High | High | High | Medium | Medium to High | Powerful composition model, good for reusable defaults and advanced users | Meaning is less local, safety can become hidden inside wrappers, weaker as the default mental model |
+| Explicit Server Function API | `serverFunction({ input: schema, policies: [requireUser], handler: async (...) => {} })` | High | High | High | High | Medium | Medium to High | Best readability at the function definition, metadata stays local, easy to lint and teach | Requires new API surface, still needs an underlying composition model |
+| First-party factory with middleware | `createServerFunctionFactory().policies([requireUser]).input(schema).define(async (...) => {})` | Medium | High | High | High | Medium | Medium to High | Powerful composition model, good for reusable defaults and advanced users | Meaning is less local, safety can become hidden inside wrappers, weaker as the default mental model |
 | Ecosystem factory | Same API as above, but outside Next.js core | High | High | Medium | High | Low to Medium | Low for Next.js | Fast to iterate, can validate demand before standardizing | Fragmented ecosystem, less authority, weaker defaults across apps |
 | Extended directive string | `"use server - auth"` or similar | Medium | Low to Medium | Low to Medium | Low | Low | Medium | Very lightweight, minimal code churn, feels native | Stringly-typed, hard to scale, hard to compose, reinforces "magic strings" |
 | Explicit import-based API | `import { serverFunction } from "next/server"` | High | Medium to High | High | High | Medium to High | High | Removes string magic, good for analysis, easy to teach | Larger semantic shift from current model, more migration complexity |
-| Decorators / annotations | `@serverFunction({ policy: "auth" })` | High | Medium to High | Medium | Medium | Medium | High | Compact and readable when supported | Awkward JS story, TS/transforms complexity, decorator baggage |
+| Decorators / annotations | `@serverFunction({ policies: [requireUser] })` | High | Medium to High | Medium | Medium | Medium | High | Compact and readable when supported | Awkward JS story, TS/transforms complexity, decorator baggage |
 | File or export convention | `*.server.ts` or reserved `export const serverFunctions` | Medium | Low to Medium | Medium | Medium | Low to Medium | Low to Medium | Easy discovery, simple conventions, build-time friendly | Convention-based magic, weak per-function policy expression |
 | Auth-by-default policy | All Server Functions authenticated unless marked public | Medium | High for auth only | Medium | Medium | High | Medium | Strong default, eliminates a common omission | Too opinionated, public functions become awkward, hidden global rules |
 | Capability-based context | Server Function declares required capabilities instead of booleans | High | High | High | High | High | High | Strong long-term model, more principled than flags | Heavy mental model, likely too big for an initial Next.js change |
@@ -203,13 +203,15 @@ The most promising path is a layered approach built around an explicit `serverFu
 
 ```ts
 export const updateProfile = serverFunction({
-  args: updateProfileSchema,
-  use: [requireUser(), rateLimitBySubject()],
-  handler: async (ctx, args) => {
-  await db.user.update({
-    where: { id: ctx.user.id },
-    data: { bio: args.bio },
-  });
+  input: updateProfileSchema,
+  policies: [requireUser, rateLimitBySubject],
+  handler: async (context, input) => {
+    await db.user.update({
+      where: { id: context.user.id },
+      data: { bio: input.bio },
+    });
+
+    return { ok: true };
   },
 });
 ```
@@ -246,7 +248,7 @@ The best initial recommendation is:
 
 1. Keep React's `'use server'` primitive for transport and compatibility.
 2. Add an explicit `serverFunction()` API as the primary Next.js surface.
-3. Back that API with typed runtime policies and an `args` contract that can infer handler types.
+3. Back that API with typed runtime policies and an `input` contract that can infer handler types.
 4. Add an ESLint rule set that understands the function metadata.
 5. Treat LSP and MCP as optional follow-on layers, not as the foundation.
 
@@ -260,13 +262,15 @@ The public API should be explicit:
 'use server'
 
 export const updateProfile = serverFunction({
-  args: updateProfileSchema,
-  use: [requireUser(), rateLimitBySubject()],
-  handler: async (ctx, args) => {
-  await db.user.update({
-    where: { id: ctx.user.id },
-    data: { bio: args.bio },
-  });
+  input: updateProfileSchema,
+  policies: [requireUser, rateLimitBySubject],
+  handler: async (context, input) => {
+    await db.user.update({
+      where: { id: context.user.id },
+      data: { bio: input.bio },
+    });
+
+    return { ok: true };
   },
 });
 ```
@@ -318,20 +322,20 @@ What app code or the ecosystem should own:
 
 This is why `auth: true` is not a good real API. It is too vague for actual applications. The framework should provide the hook point, not pretend auth is one boolean.
 
-## Validation Model
+## Input Contract
 
 Input validation should be part of the Server Function model, but Next.js should not take a hard dependency on Zod or ship a large adapter surface.
 
 The best primary design is to accept:
 
 ```ts
-args: updateProfileSchema
+input: updateProfileSchema
 ```
 
 That approach is better because:
 
 - it makes the schema the visible contract for the function
-- it gives TypeScript a clean place to infer the `handler` args type
+- it gives TypeScript a clean place to infer the `handler` input type
 - it keeps the framework validator-agnostic
 - it supports Zod, Valibot, ArkType, or custom validators without first-party adapters if they implement a shared schema contract
 
@@ -360,7 +364,7 @@ The downside is maintenance burden, which is why the first version should stay s
 This repo should likely start small:
 
 1. Implement a lightweight explicit `serverFunction()` prototype.
-2. Model validation as `args: schema` for the common case, with `parse(raw)` as the escape hatch.
+2. Model validation as `input: schema` for the common case, with `parse(raw)` as the escape hatch.
 3. Support two or three policies only:
    - require user
    - input validation
@@ -375,7 +379,7 @@ See [serverFunction.example.ts](/Users/marcoshernanz/dev/server-actions/serverFu
 ## Open Questions
 
 - Should this live in Next.js core, a companion package, or start in the ecosystem?
-- Should Server Functions expose only `args`, `parse`, and `use`, or should there be a slightly richer options model?
+- Should Server Functions expose only `input`, `parse`, and `policies`, or should there be a slightly richer options model?
 - How much of the safety story belongs at runtime versus build time?
 - Can existing `"use server"` functions interoperate cleanly with a `serverFunction()` model?
 - What is the smallest design that still gives enough structure for tooling?
@@ -384,6 +388,6 @@ See [serverFunction.example.ts](/Users/marcoshernanz/dev/server-actions/serverFu
 
 The strongest hypothesis to test is:
 
-> Safe Server Functions should be modeled as explicit, typed function definitions with pluggable runtime policies and an `args` schema contract, and then surfaced to lint, LSP, and agent tooling through shared metadata.
+> Safe Server Functions should be modeled as explicit, typed function definitions with pluggable runtime policies and an `input` schema contract, and then surfaced to lint, LSP, and agent tooling through shared metadata.
 
 If that hypothesis holds up, the next step is not another brainstorm. It is a minimal prototype that makes the tradeoffs concrete.
