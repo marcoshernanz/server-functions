@@ -1,12 +1,44 @@
 "use server";
 
-import { definePolicy, serverFunction } from "next/server";
 import { z } from "zod";
 
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { ratelimit } from "@/lib/ratelimit";
-import { supportInbox } from "@/lib/support";
+import { definePolicy, serverFunction } from "./src/index.js";
+
+type User = {
+  id: string;
+  email: string;
+};
+
+type Session = {
+  user: User;
+};
+
+type Organization = {
+  id: string;
+  slug: string;
+};
+
+declare function getSession(): Promise<Session | null>;
+
+declare const ratelimit: {
+  limit(subject: string): Promise<{ success: boolean }>;
+};
+
+declare const db: {
+  user: {
+    update(args: {
+      where: { id: string };
+      data: { bio: string };
+    }): Promise<void>;
+  };
+  organization: {
+    findBySlug(slug: string): Promise<Organization | null>;
+  };
+};
+
+declare const supportInbox: {
+  createTicket(args: { email: string; message: string }): Promise<void>;
+};
 
 // In a real app these policies would likely live in a shared file.
 export const requireUser = definePolicy(async () => {
@@ -18,6 +50,17 @@ export const requireUser = definePolicy(async () => {
 
   return { user: session.user };
 });
+
+export const loadOrganization = (slug: string) =>
+  definePolicy(async () => {
+    const organization = await db.organization.findBySlug(slug);
+
+    if (!organization) {
+      throw new Error("Organization not found");
+    }
+
+    return { organization };
+  });
 
 export const rateLimitByIp = definePolicy(async ({ ip, headers }) => {
   const subject = headers.get("x-forwarded-for") ?? ip ?? "unknown";
@@ -36,19 +79,22 @@ const updateProfileSchema = z.object({
 
 export const updateProfile = serverFunction({
   input: updateProfileSchema,
-  policies: [requireUser, rateLimitByIp],
+  policies: [requireUser, loadOrganization("acme"), rateLimitByIp],
   handler: async (context, input) => {
     await db.user.update({
       where: { id: context.user.id },
       data: { bio: input.bio },
     });
 
-    return { ok: true };
+    return {
+      ok: true,
+      organizationSlug: context.organization.slug,
+    };
   },
 });
 
 const contactFormSchema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   message: z.string().min(20),
 });
 
@@ -64,15 +110,3 @@ export const submitContactForm = serverFunction({
     return { ok: true };
   },
 });
-
-// Optional framework-level config still lives outside the per-function API.
-//
-// next.config.ts
-// export default {
-//   experimental: {
-//     serverActions: {
-//       allowedOrigins: ["app.example.com"],
-//       bodySizeLimit: "1mb",
-//     },
-//   },
-// };
