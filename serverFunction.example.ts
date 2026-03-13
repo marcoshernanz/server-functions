@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 "use server";
 
 import { policy, serverFunction } from "next/server";
@@ -39,15 +37,16 @@ const updateProfileSchema = z.object({
 });
 
 export const updateProfile = serverFunction({
-  validate: (input) => updateProfileSchema.parse(input),
+  args: updateProfileSchema,
   use: [requireUser(), rateLimitByIp()],
-}).run(async ({ input }, { ctx }) => {
-  await db.user.update({
-    where: { id: ctx.user.id },
-    data: { bio: input.bio },
-  });
+  handler: async (ctx, args) => {
+    await db.user.update({
+      where: { id: ctx.user.id },
+      data: { bio: args.bio },
+    });
 
-  return { ok: true };
+    return { ok: true };
+  },
 });
 
 const contactFormSchema = z.object({
@@ -56,15 +55,39 @@ const contactFormSchema = z.object({
 });
 
 export const submitContactForm = serverFunction({
-  validate: (input) => contactFormSchema.parse(input),
+  args: contactFormSchema,
   use: [rateLimitByIp()],
-}).run(async ({ input }) => {
-  await supportInbox.createTicket({
-    email: input.email,
-    message: input.message,
-  });
+  handler: async (_ctx, args) => {
+    await supportInbox.createTicket({
+      email: args.email,
+      message: args.message,
+    });
 
-  return { ok: true };
+    return { ok: true };
+  },
+});
+
+// Escape hatch for cases where a schema object is not the right fit.
+export const saveDraft = serverFunction({
+  parse: (formData: FormData) => {
+    const title = formData.get("title");
+    const content = formData.get("content");
+
+    if (typeof title !== "string" || typeof content !== "string") {
+      throw new Error("Invalid draft payload");
+    }
+
+    return { title, content };
+  },
+  use: [requireUser()],
+  handler: async (ctx, args) => {
+    await db.user.update({
+      where: { id: ctx.user.id },
+      data: { bio: `${args.title}\n\n${args.content}` },
+    });
+
+    return { ok: true };
+  },
 });
 
 // Optional framework-level config still lives outside the per-function API.
