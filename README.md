@@ -1,10 +1,12 @@
-# Safe Server Actions Exploration
+# Safe Server Functions Exploration
 
-This repo explores how Next.js could make Server Actions safer without making them significantly harder to use.
+This repo explores how Next.js could make Server Functions safer without making them significantly harder to use.
+
+React and Next.js now use the term "Server Functions" in their official docs. This document follows that naming, even though the problem space has often been discussed as "safe server actions".
 
 The problem is not just security. It is also readability and tooling:
 
-- Server Actions can look too similar to ordinary functions.
+- Server Functions can look too similar to ordinary functions.
 - Important guardrails such as auth, authorization, input validation, origin checks, and rate limiting are easy to forget.
 - The safety model is not very visible to editors, static analysis, or AI agents.
 
@@ -14,7 +16,7 @@ The goal of this document is to compare the main approaches, identify the tradeo
 
 Any proposal should try to improve at least some of the following:
 
-- Explicitness: make it obvious that an action is not a normal function.
+- Explicitness: make it obvious that a Server Function is not a normal function.
 - Enforceability: make common guardrails hard to forget.
 - Extensibility: support more than a single boolean like auth or no-auth.
 - Toolability: expose enough structure for lint rules, editors, LSPs, and agent tooling.
@@ -25,7 +27,7 @@ Any proposal should try to improve at least some of the following:
 
 The options below are compared across these axes:
 
-- Explicitness: how clearly the code signals "this is a server action".
+- Explicitness: how clearly the code signals "this is a server function".
 - Safety guarantees: how well the approach can enforce auth, validation, or similar checks.
 - Tooling fit: how well static analysis, editor tooling, and build-time diagnostics can understand the model.
 - AI fit: how usable the approach is for agentic workflows, codegen, and automated refactors.
@@ -36,32 +38,32 @@ The options below are compared across these axes:
 
 | Option | Example shape | Explicitness | Safety guarantees | Tooling fit | AI fit | Migration cost | Framework cost | Pros | Cons |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Explicit action API | `action({ input: fromZod(schema), use: [requireUser()] }).run(async ...)` | High | High | High | High | Medium | Medium to High | Best readability at the action definition, metadata stays local, easy to lint and teach | Requires new API surface, still needs an underlying composition model |
-| First-party action factory with middleware | `createActionFactory().use(requireUser()).input(fromZod(schema)).action(async ...)` | Medium | High | High | High | Medium | Medium to High | Powerful composition model, good for reusable defaults and advanced users | Meaning is less local, safety can become hidden inside wrappers, weaker as the default mental model |
-| Ecosystem action factory | Same API as above, but outside Next.js core | High | High | Medium | High | Low to Medium | Low for Next.js | Fast to iterate, can validate demand before standardizing | Fragmented ecosystem, less authority, weaker defaults across apps |
+| Explicit Server Function API | `serverFunction({ validate: (input) => schema.parse(input), use: [requireUser()] }).run(async ...)` | High | High | High | High | Medium | Medium to High | Best readability at the function definition, metadata stays local, easy to lint and teach | Requires new API surface, still needs an underlying composition model |
+| First-party factory with middleware | `createServerFunctionFactory().use(requireUser()).validate((input) => schema.parse(input)).define(async ...)` | Medium | High | High | High | Medium | Medium to High | Powerful composition model, good for reusable defaults and advanced users | Meaning is less local, safety can become hidden inside wrappers, weaker as the default mental model |
+| Ecosystem factory | Same API as above, but outside Next.js core | High | High | Medium | High | Low to Medium | Low for Next.js | Fast to iterate, can validate demand before standardizing | Fragmented ecosystem, less authority, weaker defaults across apps |
 | Extended directive string | `"use server - auth"` or similar | Medium | Low to Medium | Low to Medium | Low | Low | Medium | Very lightweight, minimal code churn, feels native | Stringly-typed, hard to scale, hard to compose, reinforces "magic strings" |
-| Explicit import-based API | `import { serverAction } from "next/server"` | High | Medium to High | High | High | Medium to High | High | Removes string magic, good for analysis, easy to teach | Larger semantic shift from current model, more migration complexity |
-| Decorators / annotations | `@serverAction({ auth: true })` | High | Medium to High | Medium | Medium | Medium | High | Compact and readable when supported | Awkward JS story, TS/transforms complexity, decorator baggage |
-| File or export convention | `*.action.ts` or reserved `export const actions` | Medium | Low to Medium | Medium | Medium | Low to Medium | Low to Medium | Easy discovery, simple conventions, build-time friendly | Convention-based magic, weak per-action policy expression |
-| Auth-by-default policy | All actions authenticated unless marked public | Medium | High for auth only | Medium | Medium | High | Medium | Strong default, eliminates a common omission | Too opinionated, public actions become awkward, hidden global rules |
-| Capability-based context | Action declares required capabilities instead of booleans | High | High | High | High | High | High | Strong long-term model, more principled than flags | Heavy mental model, likely too big for an initial Next.js change |
+| Explicit import-based API | `import { serverFunction } from "next/server"` | High | Medium to High | High | High | Medium to High | High | Removes string magic, good for analysis, easy to teach | Larger semantic shift from current model, more migration complexity |
+| Decorators / annotations | `@serverFunction({ policy: "auth" })` | High | Medium to High | Medium | Medium | Medium | High | Compact and readable when supported | Awkward JS story, TS/transforms complexity, decorator baggage |
+| File or export convention | `*.server.ts` or reserved `export const serverFunctions` | Medium | Low to Medium | Medium | Medium | Low to Medium | Low to Medium | Easy discovery, simple conventions, build-time friendly | Convention-based magic, weak per-function policy expression |
+| Auth-by-default policy | All Server Functions authenticated unless marked public | Medium | High for auth only | Medium | Medium | High | Medium | Strong default, eliminates a common omission | Too opinionated, public functions become awkward, hidden global rules |
+| Capability-based context | Server Function declares required capabilities instead of booleans | High | High | High | High | High | High | Strong long-term model, more principled than flags | Heavy mental model, likely too big for an initial Next.js change |
 | Compiler / build-time checks | Warnings or errors for unsafe patterns | Low to Medium | Medium | High | Medium | Low | Medium | First-party feedback without changing syntax much | Intent is hard to infer, false positives likely, not enough alone |
-| ESLint rules | `next/safe-server-actions` | Low to Medium | Medium | High | Medium | Low | Low | Cheap to ship, CI-friendly, easy to iterate | Advisory only, bypassable, not a primary API |
+| ESLint rules | `next/safe-server-functions` | Low to Medium | Medium | High | Medium | Low | Low | Cheap to ship, CI-friendly, easy to iterate | Advisory only, bypassable, not a primary API |
 | VS Code extension | Editor diagnostics and code actions | Low | Low | Medium | Low | Low | Low | Great UX, fast prototype, useful for demos | Editor-specific, weak in CI and weak for agentic workflows |
 | LSP-based diagnostics | Language server diagnostics and fixes | Low to Medium | Low to Medium | High | Medium | Low | Medium | Cross-editor story, can power smart code actions | Depends on editor and client support, still advisory |
-| MCP-based assistant tooling | Project-aware action auditing for agents | Low | Low to Medium | Medium | High | Low | Medium | Strong AI story, useful for automated refactors and audits | Still ecosystem-dependent, not an enforcement mechanism |
-| Runtime wrappers only | `withAuth(withRateLimit(action))` | Medium | High | Medium | Medium | Low to Medium | Low to Medium | Real runtime protection, easy to understand, can ship incrementally | Does not fully solve discoverability or static tooling on its own |
-| Manifest / codegen approach | Action metadata compiled into a manifest | High | High | High | High | High | High | Very analyzable, strong contracts, powerful tooling potential | Heavyweight, more infrastructure, may feel unlike current Next.js |
+| MCP-based assistant tooling | Project-aware Server Function auditing for agents | Low | Low to Medium | Medium | High | Low | Medium | Strong AI story, useful for automated refactors and audits | Still ecosystem-dependent, not an enforcement mechanism |
+| Runtime wrappers only | `withAuth(withRateLimit(serverFunction))` | Medium | High | Medium | Medium | Low to Medium | Low to Medium | Real runtime protection, easy to understand, can ship incrementally | Does not fully solve discoverability or static tooling on its own |
+| Manifest / codegen approach | Server Function metadata compiled into a manifest | High | High | High | High | High | High | Very analyzable, strong contracts, powerful tooling potential | Heavyweight, more infrastructure, may feel unlike current Next.js |
 
 ## Summary By Direction
 
 ### Strongest short-term direction
 
-The most promising path is a layered approach built around an explicit `action()` API, backed internally by a composition model:
+The most promising path is a layered approach built around an explicit `serverFunction()` API, backed internally by a composition model:
 
 ```ts
-export const updateProfile = action({
-  input: fromZod(z.object({ bio: z.string().min(10).max(160) })),
+export const updateProfile = serverFunction({
+  validate: (input) => updateProfileSchema.parse(input),
   use: [requireUser(), rateLimitBySubject()],
 }).run(async ({ input }, { ctx }) => {
   await db.user.update({
@@ -73,8 +75,8 @@ export const updateProfile = action({
 
 Why this direction stands out:
 
-- It makes the action boundary explicit.
-- It keeps the safety metadata local to the action instead of hiding it in a wrapper.
+- It makes the Server Function boundary explicit.
+- It keeps the safety metadata local to the function instead of hiding it in a wrapper.
 - It gives Next.js a place to attach real runtime guarantees.
 - It scales better than directive strings once more policies exist.
 - It produces structured metadata that lint rules, LSPs, and agents can understand.
@@ -82,7 +84,7 @@ Why this direction stands out:
 
 ### Valuable supporting layers
 
-Even if `action()` becomes the main API, tooling still matters:
+Even if `serverFunction()` becomes the main API, tooling still matters:
 
 - ESLint can catch obvious mistakes quickly and is the cheapest way to validate the model.
 - LSP support is a better long-term editor story than a VS Code-only extension.
@@ -95,16 +97,16 @@ Directive extensions such as `"use server - auth"` are attractive because they a
 - They are hard to compose.
 - They remain stringly-typed.
 - They blur whether policy is code, metadata, or compiler magic.
-- They do not create a strong abstraction for middleware or typed context.
+- They do not create a strong abstraction for policies or typed context.
 
 ## Recommendation
 
 The best initial recommendation is:
 
 1. Keep React's `'use server'` primitive for transport and compatibility.
-2. Add an explicit `action()` API as the primary Next.js surface.
-3. Back that API with typed runtime policies and validator adapters.
-4. Add an ESLint rule set that understands the action metadata.
+2. Add an explicit `serverFunction()` API as the primary Next.js surface.
+3. Back that API with typed runtime policies and a simple `validate(input)` hook.
+4. Add an ESLint rule set that understands the function metadata.
 5. Treat LSP and MCP as optional follow-on layers, not as the foundation.
 
 This is a better fit than betting on new directive strings or editor-only solutions.
@@ -116,8 +118,8 @@ The public API should be explicit:
 ```ts
 'use server'
 
-export const updateProfile = action({
-  input: fromZod(updateProfileSchema),
+export const updateProfile = serverFunction({
+  validate: (input) => updateProfileSchema.parse(input),
   use: [requireUser(), rateLimitBySubject()],
 }).run(async ({ input }, { ctx }) => {
   await db.user.update({
@@ -129,14 +131,14 @@ export const updateProfile = action({
 
 Why this is better than a factory-first public API:
 
-- The action definition is self-describing where it is exported.
+- The Server Function definition is self-describing where it is exported.
 - Tooling does not need to chase factory composition to understand basic policy.
 - It is easier to teach than "define a secure factory somewhere else and remember to use it."
 - Advanced composition can still exist underneath or as a lower-level API later.
 
 In other words:
 
-- Default public API: `action(...)`
+- Default public API: `serverFunction(...)`
 - Lower-level primitive: factory/composition
 - React primitive: `'use server'`
 
@@ -159,10 +161,10 @@ Next.js should not try to own all concrete guard implementations.
 
 What Next.js should own:
 
-- the `action()` API
+- the `serverFunction()` API
 - the execution pipeline
 - typed context propagation
-- validator and policy contracts
+- policy contracts
 - framework-level transport protections such as origin checks and body limits
 
 What app code or the ecosystem should own:
@@ -176,20 +178,22 @@ This is why `auth: true` is not a good real API. It is too vague for actual appl
 
 ## Validation Model
 
-Input validation should be part of the action model, but Next.js should not take a hard dependency on Zod.
+Input validation should be part of the Server Function model, but Next.js should not take a hard dependency on Zod or ship a large adapter surface.
 
-Instead, Next.js should support a small validator contract or adapter layer:
+The simplest honest design is to accept a validation function:
 
 ```ts
-input: fromZod(updateProfileSchema)
+validate: (input) => updateProfileSchema.parse(input)
 ```
 
 That approach is better because:
 
 - it keeps the framework validator-agnostic
-- it supports Zod without making Zod a framework dependency
-- it leaves room for Valibot, ArkType, or custom validators
-- it gives tooling a stable abstraction regardless of library choice
+- it supports Zod, Valibot, ArkType, or custom validators without any first-party adapters
+- it avoids forcing Next.js to maintain integrations for many schema libraries
+- it gives teams freedom to standardize on whatever validator they already use
+
+If the ecosystem eventually converges on a stable validator protocol, Next.js could support that later. It should not start there.
 
 ## Why Not Keep It In The Ecosystem?
 
@@ -205,8 +209,8 @@ The downside is maintenance burden, which is why the first version should stay s
 
 This repo should likely start small:
 
-1. Implement a lightweight explicit `action()` prototype.
-2. Model validators as adapters instead of tying the API to one library.
+1. Implement a lightweight explicit `serverFunction()` prototype.
+2. Model validation as a plain `validate(input)` hook instead of adapters.
 3. Support two or three policies only:
    - require user
    - input validation
@@ -216,20 +220,20 @@ This repo should likely start small:
 
 That is enough to demonstrate the idea without pretending to solve the entire Next.js API design space.
 
-See [explicitActionApi.ts](/Users/marcoshernanz/dev/server-actions/explicitActionApi.ts) for an end-to-end sketch of the proposed contracts and usage.
+See [serverFunction.example.ts](/Users/marcoshernanz/dev/server-actions/serverFunction.example.ts) for a developer-facing sketch of the proposed API.
 
 ## Open Questions
 
 - Should this live in Next.js core, a companion package, or start in the ecosystem?
-- Should actions declare booleans like `auth: true`, or more expressive policy objects?
+- Should Server Functions expose only `validate` and `use`, or should there be a slightly richer options model?
 - How much of the safety story belongs at runtime versus build time?
-- Can existing `"use server"` actions interoperate cleanly with a factory-based model?
+- Can existing `"use server"` functions interoperate cleanly with a `serverFunction()` model?
 - What is the smallest design that still gives enough structure for tooling?
 
 ## Current Hypothesis
 
 The strongest hypothesis to test is:
 
-> Safe Server Actions should be modeled as explicit, typed action definitions with pluggable policies and validator adapters, and then surfaced to lint, LSP, and agent tooling through shared metadata.
+> Safe Server Functions should be modeled as explicit, typed function definitions with pluggable runtime policies and a simple validation hook, and then surfaced to lint, LSP, and agent tooling through shared metadata.
 
 If that hypothesis holds up, the next step is not another brainstorm. It is a minimal prototype that makes the tradeoffs concrete.
