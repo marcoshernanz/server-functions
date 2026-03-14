@@ -14,6 +14,14 @@ function isServerFunctionCall(node) {
   );
 }
 
+function isFunctionLike(node) {
+  return (
+    node?.type === "FunctionDeclaration" ||
+    node?.type === "FunctionExpression" ||
+    node?.type === "ArrowFunctionExpression"
+  );
+}
+
 function getPropertyByName(objectExpression, propertyName) {
   return objectExpression.properties.find(
     (property) =>
@@ -48,6 +56,67 @@ function traverse(node, visitor) {
   }
 }
 
+function buildHandlerInputParam(params, sourceCode) {
+  if (params.length === 0) {
+    return "_input";
+  }
+
+  if (params.every((param) => param.type === "Identifier")) {
+    if (params.length === 1) {
+      return params[0].name;
+    }
+
+    return `{ ${params.map((param) => param.name).join(", ")} }`;
+  }
+
+  if (params.length === 1) {
+    return sourceCode.getText(params[0]);
+  }
+
+  return null;
+}
+
+function getFunctionBodyText(fn, sourceCode) {
+  if (fn.body.type === "BlockStatement") {
+    return sourceCode.getText(fn.body);
+  }
+
+  return `{ return ${sourceCode.getText(fn.body)}; }`;
+}
+
+function buildServerFunctionSuggestion({
+  exportPrefix,
+  fn,
+  sourceCode,
+}) {
+  if (fn.generator) {
+    return null;
+  }
+
+  const inputParam = buildHandlerInputParam(fn.params, sourceCode);
+
+  if (!inputParam) {
+    return null;
+  }
+
+  const asyncKeyword = fn.async ? "async " : "";
+  const functionBody = getFunctionBodyText(fn, sourceCode);
+
+  if (exportPrefix === "export default") {
+    return `export default serverFunction({
+  input: /* TODO: replace with a Standard Schema validator */ undefined as never,
+  policies: [],
+  handler: ${asyncKeyword}(_context, ${inputParam}) => ${functionBody},
+});`;
+  }
+
+  return `${exportPrefix} = serverFunction({
+  input: /* TODO: replace with a Standard Schema validator */ undefined as never,
+  policies: [],
+  handler: ${asyncKeyword}(_context, ${inputParam}) => ${functionBody},
+});`;
+}
+
 const preferServerFunctionRule = {
   meta: {
     type: "suggestion",
@@ -56,12 +125,40 @@ const preferServerFunctionRule = {
         "Require exported server functions in 'use server' modules to use serverFunction(...)",
     },
     schema: [],
+    hasSuggestions: true,
     messages: {
       preferServerFunction:
         "Exported functions in 'use server' modules should be defined with serverFunction(...).",
+      convertToServerFunction:
+        "Wrap this export with serverFunction(...) and add a matching import if needed.",
     },
   },
   create(context) {
+    const sourceCode = context.sourceCode;
+
+    function reportWithSuggestion({ reportNode, replaceNode, exportPrefix, fn }) {
+      const replacement = buildServerFunctionSuggestion({
+        exportPrefix,
+        fn,
+        sourceCode,
+      });
+
+      context.report({
+        node: reportNode,
+        messageId: "preferServerFunction",
+        suggest: replacement
+          ? [
+              {
+                messageId: "convertToServerFunction",
+                fix(fixer) {
+                  return fixer.replaceText(replaceNode, replacement);
+                },
+              },
+            ]
+          : undefined,
+      });
+    }
+
     return {
       Program(program) {
         if (!isUseServerModule(program)) {
@@ -77,15 +174,31 @@ const preferServerFunctionRule = {
             }
 
             if (declaration.type === "FunctionDeclaration") {
-              context.report({
-                node: declaration,
-                messageId: "preferServerFunction",
+              reportWithSuggestion({
+                reportNode: declaration,
+                replaceNode: statement,
+                exportPrefix: `export const ${declaration.id?.name ?? "unnamedServerFunction"}`,
+                fn: declaration,
               });
             }
 
             if (declaration.type === "VariableDeclaration") {
               for (const declarator of declaration.declarations) {
                 if (!isServerFunctionCall(declarator.init)) {
+                  if (
+                    declarator.id.type === "Identifier" &&
+                    isFunctionLike(declarator.init)
+                  ) {
+                    reportWithSuggestion({
+                      reportNode: declarator,
+                      replaceNode: statement,
+                      exportPrefix: `export const ${declarator.id.name}`,
+                      fn: declarator.init,
+                    });
+
+                    continue;
+                  }
+
                   context.report({
                     node: declarator,
                     messageId: "preferServerFunction",
@@ -99,9 +212,11 @@ const preferServerFunctionRule = {
             statement.type === "ExportDefaultDeclaration" &&
             statement.declaration.type === "FunctionDeclaration"
           ) {
-            context.report({
-              node: statement.declaration,
-              messageId: "preferServerFunction",
+            reportWithSuggestion({
+              reportNode: statement.declaration,
+              replaceNode: statement,
+              exportPrefix: "export default",
+              fn: statement.declaration,
             });
           }
         }

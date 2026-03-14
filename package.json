@@ -3,10 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint src examples runtime-tests.ts type-tests.ts eslint-tests.ts",
-    "test:eslint": "tsx eslint-tests.ts",
+    "lint": "eslint src examples tests",
+    "test:eslint": "tsx tests/eslint.test.ts",
     "typecheck": "tsc --noEmit",
-    "test:runtime": "tsx runtime-tests.ts"
+    "test:runtime": "tsx tests/runtime.test.ts"
   },
   "devDependencies": {
     "@standard-schema/spec": "^1.0.0",
