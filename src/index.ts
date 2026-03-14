@@ -7,16 +7,26 @@ type ReservedContextKey = keyof BaseContext;
 declare const policyBrand: unique symbol;
 const serverFunctionMeta = Symbol("serverFunctionMeta");
 
+/**
+ * Minimal header access exposed to policies and handlers in the prototype runtime.
+ */
 export type HeaderBag = {
   get(name: string): string | null;
 };
 
+/**
+ * Base request context that is always available to policies and handlers.
+ */
 export type BaseContext = {
   headers: HeaderBag;
   ip?: string | undefined;
   requestId: string;
 };
 
+/**
+ * Reusable runtime policy that may enforce behavior and optionally contribute
+ * named fields to the handler context.
+ */
 export type Policy<
   TRequiredContext extends object = {},
   TOutput extends ContextFragment = {},
@@ -85,6 +95,12 @@ type ServerFunctionMetadata<
   TResult,
 > = ServerFunctionConfig<TSchema, TPolicies, TResult>;
 
+/**
+ * A typed server function created with {@link serverFunction}.
+ *
+ * The callable signature accepts the schema input type and resolves to the
+ * handler return type.
+ */
 export type ServerFunction<TSchema extends StandardSchemaV1, TResult> = ((
   input: StandardSchemaV1.InferInput<TSchema>,
 ) => Promise<TResult>) & {
@@ -108,6 +124,25 @@ type ServerFunctionMetadataOf<TServerFunction extends AnyServerFunction> =
     ? ServerFunctionMetadata<TSchema, TPolicies, TResult>
     : never;
 
+/**
+ * Defines a reusable policy that runs before a server function handler.
+ *
+ * Policies can enforce invariants, read from the base request context, and add
+ * named values to the handler context.
+ *
+ * @example
+ * ```ts
+ * const requireUser = definePolicy(async () => {
+ *   const session = await getSession();
+ *
+ *   if (!session?.user) {
+ *     throw new Error("Unauthorized");
+ *   }
+ *
+ *   return { user: session.user };
+ * });
+ * ```
+ */
 export function definePolicy<
   TRequiredContext extends object = {},
   TOutput extends ContextFragment = {},
@@ -192,6 +227,33 @@ async function runServerFunction<TServerFunction extends AnyServerFunction>(
   )) as Awaited<ReturnType<TServerFunction>>;
 }
 
+/**
+ * Creates a typed server function from a Standard Schema-compatible validator,
+ * an ordered list of policies, and a handler.
+ *
+ * On invocation, the returned function validates input, runs policies in
+ * order, merges policy outputs into the handler context, and then executes the
+ * handler with the parsed input value.
+ *
+ * In this prototype, direct invocation uses a synthetic base request context
+ * rather than a real framework request.
+ *
+ * @example
+ * ```ts
+ * export const updateProfile = serverFunction({
+ *   input: z.object({ name: z.string().min(1) }),
+ *   policies: [requireUser],
+ *   handler: async (context, input) => {
+ *     await db.user.update({
+ *       where: { id: context.user.id },
+ *       data: { name: input.name },
+ *     });
+ *
+ *     return { ok: true };
+ *   },
+ * });
+ * ```
+ */
 export function serverFunction<
   const TSchema extends StandardSchemaV1,
   const TPolicies extends readonly AnyPolicy[],

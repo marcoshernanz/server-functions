@@ -8,9 +8,7 @@ import { db, supportInbox } from "./app.js";
 import { rateLimitByIp, requireUser } from "./policies.js";
 
 export const updateProfile = serverFunction({
-  input: z.object({
-    name: z.string().min(1).max(40),
-  }),
+  input: z.object({ name: z.string().min(1).max(40) }),
   policies: [requireUser, rateLimitByIp],
   handler: async (context, input) => {
     await db.user.update({
