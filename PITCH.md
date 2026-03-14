@@ -1,6 +1,6 @@
 # Pitch
 
-This repo is a prototype for making Next.js Server Functions safer, clearer, and more tooling-friendly.
+This repo is a prototype for making higher-risk Next.js Server Functions safer, clearer, and more tooling-friendly.
 
 ## Problem
 
@@ -14,7 +14,7 @@ That creates three problems:
 
 ## Proposed Direction
 
-Use an explicit API:
+Use an explicit opt-in API:
 
 ```ts
 export const updateProfile = serverFunction({
@@ -33,12 +33,22 @@ export const updateProfile = serverFunction({
 
 This keeps the action boundary explicit and gives tooling a stable shape to inspect.
 
+This is not meant to replace every use of raw `'use server'`. The stronger claim is that Next.js should have a structured safe layer for exported client-callable functions and mutations where auth, validation, and tooling matter most.
+
 ## Why This Is Better Than Magic Strings
 
 - Safety metadata is visible in code instead of hidden in directives like `"use server - auth"`.
 - Policies are composable and typed.
 - Input validation is part of the definition.
 - Tools can reason about the structure without guessing intent from arbitrary function bodies.
+
+## What This Is Not
+
+- It is not a proposal to replace the raw React `'use server'` primitive.
+- It is not a claim that every Server Function should use this shape.
+- It is not a full framework rewrite.
+
+The intended role is an additive, opt-in safe layer for the cases where the default primitive is too implicit and too hard for tooling to understand.
 
 ## What This Repo Proves
 

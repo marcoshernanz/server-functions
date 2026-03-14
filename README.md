@@ -24,7 +24,7 @@ npm run test:eslint
 
 What this prototype demonstrates:
 
-- an explicit `serverFunction({ input, policies, handler })` API
+- an explicit `serverFunction({ input, policies, handler })` API as an opt-in safe layer
 - `definePolicy(...)` for reusable guardrails
 - Standard Schema-based type inference
 - a simple executable runtime
@@ -251,6 +251,8 @@ Why this direction stands out:
 - It produces structured metadata that lint rules, LSPs, and agents can understand.
 - It can be introduced incrementally.
 
+The important product constraint is that this should be introduced as an additive safe layer, not as a mandate for every Server Function in an app.
+
 ### Valuable supporting layers
 
 Even if `serverFunction()` becomes the main API, tooling still matters:
@@ -273,12 +275,14 @@ Directive extensions such as `"use server - auth"` are attractive because they a
 The best initial recommendation is:
 
 1. Keep React's `'use server'` primitive for transport and compatibility.
-2. Add an explicit `serverFunction()` API as the primary Next.js surface.
+2. Add an explicit `serverFunction()` API as an opt-in structured surface for higher-risk exported Server Functions.
 3. Back that API with typed runtime policies and an `input` contract that can infer handler types.
 4. Add an ESLint rule set that understands the function metadata.
 5. Treat LSP and MCP as optional follow-on layers, not as the foundation.
 
 This is a better fit than betting on new directive strings or editor-only solutions.
+
+It is also a better fit than trying to replace every raw `'use server'` function with a heavier abstraction. The value here is in having a strong safe path for the cases where explicitness and toolability matter.
 
 ## Recommended API Shape
 
@@ -310,11 +314,21 @@ Why this is better than a factory-first public API:
 
 In other words:
 
-- Default public API: `serverFunction(...)`
+- Opt-in safe API: `serverFunction(...)`
 - Lower-level primitive: factory/composition
 - React primitive: `'use server'`
 
 That split keeps the model readable without fighting React's existing semantics.
+
+## Where This Fits
+
+This proposal makes the most sense for exported client-callable Server Functions, especially mutations and other higher-risk paths where:
+
+- auth or authorization are easy to forget
+- input parsing is important
+- tooling should be able to inspect the function shape
+
+It is less compelling as a mandatory wrapper for every single use of `'use server'`.
 
 ## Why Not Just Tooling?
 
@@ -414,6 +428,6 @@ See [examples/README.md](/Users/marcoshernanz/dev/server-actions/examples/README
 
 The strongest hypothesis to test is:
 
-> Safe Server Functions should be modeled as explicit, typed function definitions with pluggable runtime policies and an `input` schema contract, and then surfaced to lint, LSP, and agent tooling through shared metadata.
+> Higher-risk exported Server Functions should have an explicit, typed safe layer with pluggable runtime policies and an `input` schema contract, and that layer should be surfaced to lint, LSP, and agent tooling through shared metadata.
 
 If that hypothesis holds up, the next step is not another brainstorm. It is a minimal prototype that makes the tradeoffs concrete.
