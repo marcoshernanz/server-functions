@@ -19,35 +19,6 @@ export const updateProfile = serverFunction({
 });
 ```
 
-## Why This Exists
-
-Exported Server Functions are remote endpoints, so two failures show up quickly:
-
-### 1. Bad auth / identity
-
-```ts
-export async function updateProfile(userId: string, data: ProfileInput) {
-  await db.user.update({
-    where: { id: userId },
-    data,
-  });
-}
-```
-
-The client should not decide which user is being mutated. `policies: [requireUser]` moves identity and authorization back to the server.
-
-### 2. Bad runtime input
-
-```ts
-export async function updateProfile(data: { name: string }) {
-  await db.user.update({ data });
-}
-```
-
-TypeScript does not validate runtime input. `input: schema` makes parsing explicit and typed before the handler runs.
-
-`input` uses Standard Schema, so this stays validator-agnostic: Zod, Valibot, and other compatible libraries can all work.
-
 ## What This Repo Proves
 
 - a clear `serverFunction({ input, policies, handler })` API
