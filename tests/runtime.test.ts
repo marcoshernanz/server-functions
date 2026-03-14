@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { definePolicy, serverFunction } from "./src/index.js";
+import { definePolicy, serverFunction } from "../src/index.js";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -82,10 +82,7 @@ const protectedAction = serverFunction({
   },
 });
 
-await expectReject(
-  protectedAction({}),
-  "Unauthorized",
-);
+await expectReject(protectedAction({}), "Unauthorized");
 
 const duplicateSubject = definePolicy(async () => {
   return { subject: "duplicate" };

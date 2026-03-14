@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { definePolicy, serverFunction } from "./src/index.js";
+import { definePolicy, serverFunction } from "../src/index.js";
 
 type Equal<TLeft, TRight> = (<T>() => T extends TLeft ? 1 : 2) extends <
   T,
@@ -160,7 +160,7 @@ const badHeaders = definePolicy(async () => {
   return { headers: "not allowed" };
 });
 
-// @ts-expect-error Reserved context keys should not be allowed.
+// @ts-expect-error Reserved context keys should be rejected.
 serverFunction({
   input: z.object({}),
   policies: [badHeaders],
