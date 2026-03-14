@@ -4,6 +4,32 @@ This repo explores how Next.js could make Server Functions safer without making 
 
 React and Next.js now use the term "Server Functions" in their official docs. This document follows that naming, even though the problem space has often been discussed as "safe server actions".
 
+## Start Here
+
+If you are evaluating this repo quickly, use this order:
+
+1. Read [PITCH.md](/Users/marcoshernanz/dev/server-actions/PITCH.md).
+2. Open [examples/serverFunctions.ts](/Users/marcoshernanz/dev/server-actions/examples/serverFunctions.ts).
+3. Open [src/index.ts](/Users/marcoshernanz/dev/server-actions/src/index.ts).
+4. Skim [IMPLEMENTATION_DECISIONS.md](/Users/marcoshernanz/dev/server-actions/IMPLEMENTATION_DECISIONS.md) if you want the type-level design decisions.
+
+Quick verification:
+
+```bash
+npm install
+npm run typecheck
+npm run test:runtime
+npm run test:eslint
+```
+
+What this prototype demonstrates:
+
+- an explicit `serverFunction({ input, policies, handler })` API
+- `definePolicy(...)` for reusable guardrails
+- Standard Schema-based type inference
+- a simple executable runtime
+- ESLint rules that can understand and migrate toward the API
+
 The problem is not just security. It is also readability and tooling:
 
 - Server Functions can look too similar to ordinary functions.
