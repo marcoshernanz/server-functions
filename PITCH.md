@@ -4,7 +4,34 @@ This repo explores an opt-in safe layer for higher-risk Next.js Server Functions
 
 ## Problem
 
-Exported Server Functions are easy to confuse with normal functions even though they are really remote mutation endpoints. That makes auth, input validation, and tooling much harder than they should be.
+Exported Server Functions are easy to confuse with normal functions even though they are really remote mutation endpoints.
+
+That leads to two common problems:
+
+### 1. Bad auth / identity
+
+```ts
+export async function updateProfile(userId: string, data: ProfileInput) {
+  await db.user.update({
+    where: { id: userId },
+    data,
+  });
+}
+```
+
+The client should not decide which user is being mutated. `policies: [requireUser]` moves identity and authorization back to the server.
+
+### 2. Bad runtime input
+
+```ts
+export async function updateProfile(data: { name: string }) {
+  await db.user.update({ data });
+}
+```
+
+TypeScript does not validate runtime input. `input: schema` makes parsing explicit and typed before the handler runs.
+
+`input` uses Standard Schema, so the solution stays validator-agnostic instead of forcing one specific library.
 
 ## Proposed Direction
 
