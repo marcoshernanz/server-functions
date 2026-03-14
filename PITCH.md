@@ -52,12 +52,23 @@ export const updateProfile = serverFunction({
 });
 ```
 
+The interesting part is not only the runtime wrapper. The shape is structured enough that lint rules, editors, and AI agents can understand what kind of function this is and what safety checks apply to it.
+
 ## Why It Is Interesting
 
+- structured enough for lint rules, codemods, editors, and agent tooling
+- easier to reason about than a plain exported async function
 - more explicit than raw `'use server'`
-- easier to lint and reason about
-- structured enough for editor and agent tooling
 - better fit than adding more magic strings
+
+## Why This Might Belong In Next.js
+
+A userland library is enough to prove the API shape, but there is also a case for framework ownership:
+
+- Next.js already knows which exports are client-callable server endpoints
+- the framework can pair the API with lint rules, codemods, docs, and editor support
+- framework ownership gives the safety story a canonical shape instead of leaving teams to invent their own wrappers
+- this could stay additive, so raw `'use server'` still exists for lower-level or lower-risk cases
 
 ## Important Constraint
 
@@ -65,7 +76,14 @@ This is not meant to replace raw `'use server'`. It makes more sense as an addit
 
 ## What This Repo Proves
 
+- ESLint rules that can understand and migrate toward the API
 - strong type inference from Standard Schema-compatible validators
 - typed policy composition into `context`
 - a small executable runtime
-- ESLint rules that can understand and migrate toward the API
+
+## Open Questions
+
+- should something like `policies` live in framework core, or should Next.js only expose hooks that libraries build on top of
+- is `serverFunction(...)` the right level of ceremony, or does it feel too heavy for smaller actions
+- should Next.js bless one explicit wrapper shape, or should it solve some of the same problems with compiler metadata instead
+- how should this interact with existing Server Function ergonomics, especially if the team wants to avoid making the model feel even more magical
