@@ -1,5 +1,5 @@
 {
-  "name": "server-functions-prototype",
+  "name": "server-functions",
   "private": true,
   "type": "module",
   "scripts": {
