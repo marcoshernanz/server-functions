@@ -48,4 +48,3 @@ npm run test:eslint
 - [tests/types.test.ts](./tests/types.test.ts): type-level proof
 - [tests/runtime.test.ts](./tests/runtime.test.ts): runtime proof
 - [tests/eslint.test.ts](./tests/eslint.test.ts): tooling proof
-- [JIMMY_DM.md](./JIMMY_DM.md): short DM draft
